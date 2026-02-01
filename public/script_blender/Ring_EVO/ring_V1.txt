@@ -1,0 +1,67 @@
+import bpy
+import bmesh
+import math
+
+def create_evo_ring(output_path):
+    # 1. Nettoyage de la scène
+    if bpy.context.object and bpy.context.object.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+    # Paramètres (en mm)
+    height = 10
+    radius = 38 / 2 # 19mm
+    
+    mesh = bpy.data.meshes.new("EvoRing")
+    obj = bpy.data.objects.new("EvoRing", mesh)
+    bpy.context.collection.objects.link(obj)
+    
+    bm = bmesh.new()
+
+    # Création du cylindre de base
+    bmesh.ops.create_circle(bm, cap_ends=False, radius=radius, segments=64)
+    edges_start = bm.edges[:]
+    res = bmesh.ops.extrude_edge_only(bm, edges=edges_start)
+    verts_extruded = [v for v in res['geom'] if isinstance(v, bmesh.types.BMVert)]
+    
+    for v in verts_extruded:
+        v.co.z += height
+
+    # 2. Solidify (Épaisseur de 2mm)
+    bm.to_mesh(mesh)
+    bpy.context.view_layer.objects.active = obj
+    mod_solid = obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+    mod_solid.thickness = -2 
+    bpy.ops.object.modifier_apply(modifier="Solidify")
+
+    # 3. Finitions (Bevel)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bm_edit = bmesh.from_edit_mesh(obj.data)
+    bm_edit.edges.ensure_lookup_table()
+    
+    target_edges = [e for e in bm_edit.edges if e.is_boundary or any(round(v.co.z, 2) in [0.0, float(height)] for v in e.verts)]
+    bmesh.ops.bevel(bm_edit, geom=target_edges, offset=0.3, segments=3, profile=0.5, affect='EDGES')
+    
+    bmesh.update_edit_mesh(obj.data)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.shade_smooth()
+
+    # --- SÉCURITÉ EXPORT ---
+    obj.select_set(True) # Force la sélection de l'anneau
+
+    # Export
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=output_path + "ring_v1.glb", 
+            export_format='GLB', 
+            use_selection=True,
+            export_apply=True # Indispensable pour garder le lissage et les biseaux
+        )
+        print("Anneau EVO exporté avec succès !")
+    except Exception as e:
+        print(f"Erreur export : {e}")
+
+# --- TON CHEMIN ---
+path = r"C:\Users\vergn\Documents\Projet-Perso\Ls-Creator\public\models/"
+create_evo_ring(path)

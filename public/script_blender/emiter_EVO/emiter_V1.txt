@@ -1,0 +1,96 @@
+import bpy
+import bmesh
+import math
+
+def create_evo_emitter_v2(output_path):
+    # Nettoyage
+    if bpy.context.object and bpy.context.object.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+    # Paramètres
+    total_height = 64
+    base_height = 5
+    curve_height = total_height - base_height
+    max_radius = 39 / 2
+    min_radius = 31 / 2 
+    
+    mesh = bpy.data.meshes.new("EvoEmitter")
+    obj = bpy.data.objects.new("EvoEmitter", mesh)
+    bpy.context.collection.objects.link(obj)
+    
+    bm = bmesh.new()
+    
+    # --- CRÉATION DU PROFIL ---
+    verts_profile = []
+    
+    # 1. Partie verticale de la base (0 à 5mm)
+    v_start = bm.verts.new((max_radius, 0, 0))
+    v_base_end = bm.verts.new((max_radius, 0, base_height))
+    verts_profile.extend([v_start, v_base_end])
+    
+    # 2. Partie courbe (de 5mm à 64mm)
+    segments_curve = 20
+    for i in range(1, segments_curve + 1):
+        t = i / segments_curve
+        z = base_height + (t * curve_height)
+        current_radius = min_radius + (max_radius - min_radius) * (math.pow(abs(t - 0.5) * 2, 2))
+        v = bm.verts.new((current_radius, 0, z))
+        verts_profile.append(v)
+    
+    # Création des arêtes du profil
+    for i in range(len(verts_profile) - 1):
+        bm.edges.new((verts_profile[i], verts_profile[i+1]))
+        
+    # Révolution (Spin)
+    geom_to_spin = bm.verts[:] + bm.edges[:]
+    bmesh.ops.spin(bm, geom=geom_to_spin, cent=(0, 0, 0), axis=(0, 0, 1), angle=math.radians(360), steps=64)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.001)
+    
+    bm.to_mesh(mesh)
+    bm.free()
+
+    # --- FINITIONS ---
+    bpy.context.view_layer.objects.active = obj
+    
+    # Épaisseur
+    mod_solid = obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+    mod_solid.thickness = -3 
+    bpy.ops.object.modifier_apply(modifier="Solidify")
+
+    # Trous de vis
+    for i in range(4):
+        angle = math.radians(i * 90)
+        bpy.ops.mesh.primitive_cylinder_add(radius=1.5, depth=10, location=(math.cos(angle)*max_radius, math.sin(angle)*max_radius, 2.5))
+        hole = bpy.context.object
+        hole.rotation_euler[1] = math.radians(90)
+        hole.rotation_euler[2] = angle
+        
+        mod_bool = obj.modifiers.new(name="Hole", type='BOOLEAN')
+        mod_bool.object = hole
+        mod_bool.operation = 'DIFFERENCE'
+        bpy.ops.object.modifier_apply(modifier="Hole")
+        bpy.data.objects.remove(hole, do_unlink=True)
+
+    bpy.ops.object.shade_smooth()
+    
+    # --- AJOUTS POUR RÉPARER L'EXPORT ---
+    obj.select_set(True) # 1. On force la sélection de l'objet
+    
+    # Export
+    try:
+        # 2. On ajoute export_apply=True pour valider les modificateurs restants
+        bpy.ops.export_scene.gltf(
+            filepath=output_path + "emitter_v1.glb", 
+            export_format='GLB', 
+            use_selection=True, 
+            export_apply=True 
+        )
+        print("Émetteur EVO v3 exporté avec succès !")
+    except Exception as e:
+        print(f"Erreur export : {e}")
+
+# --- TON CHEMIN ---
+path = r"C:\Users\vergn\Documents\Projet-Perso\Ls-Creator\public\models/"
+create_evo_emitter_v2(path)

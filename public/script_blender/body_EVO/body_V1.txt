@@ -1,0 +1,88 @@
+import bpy
+import bmesh
+import math
+
+def create_evo_body(output_path):
+    # Nettoyage
+    if bpy.context.object and bpy.context.object.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+    # Paramètres
+    L = 180 # Longueur totale
+    R = 38 / 2 # Rayon extérieur (19mm)
+    depth = 2 # Profondeur des creux
+    Ri = R - depth # Rayon intérieur des creux (17mm)
+    
+    mesh = bpy.data.meshes.new("EvoBody")
+    obj = bpy.data.objects.new("EvoBody", mesh)
+    bpy.context.collection.objects.link(obj)
+    bm = bmesh.new()
+
+    # --- CONSTRUCTION DU PROFIL (Z, Rayon) ---
+    profile = [
+        (0, R), (30, R),           # Base lisse
+        (30, Ri), (35, Ri), (35, R), # Creux USB-C
+    ]
+    
+    z_cursor = 150 
+    
+    # Creux 3 (V-shape 45°)
+    p3 = [(z_cursor-2, R), (z_cursor-4, Ri), (z_cursor-6, R)] 
+    z_cursor -= 11 
+    
+    # Creux 2 (V-shape 45°)
+    p2 = [(z_cursor-2, R), (z_cursor-4, Ri), (z_cursor-6, R)]
+    z_cursor -= 11
+    
+    # Creux 1 (Plat)
+    p1 = [(z_cursor, R), (z_cursor-5, Ri), (z_cursor-5, R)]
+    
+    full_profile = profile + [(35.1, R), (z_cursor, R)] + p1[::-1] + [(z_cursor+5.1, R), (z_cursor+11-6, R)] + p2[::-1] + [(z_cursor+16.1, R), (z_cursor+22-6, R)] + p3[::-1] + [(150, R), (180, R)]
+
+    # Création des sommets
+    verts = [bm.verts.new((p[1], 0, p[0])) for p in full_profile]
+    for i in range(len(verts) - 1):
+        bm.edges.new((verts[i], verts[i+1]))
+
+    # Révolution
+    bmesh.ops.spin(bm, geom=bm.verts[:] + bm.edges[:], cent=(0,0,0), axis=(0,0,1), angle=math.radians(360), steps=64)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.001)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(mesh)
+    bm.free()
+    
+    # --- TROU USB-C ---
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(R, 0, 32.5))
+    usb_tool = bpy.context.object
+    usb_tool.scale = (10, 9, 3.5) 
+    
+    mod_bool = obj.modifiers.new(name="USB_Hole", type='BOOLEAN')
+    mod_bool.object = usb_tool
+    mod_bool.operation = 'DIFFERENCE'
+    bpy.ops.object.modifier_apply(modifier="USB_Hole")
+    bpy.data.objects.remove(usb_tool, do_unlink=True)
+
+    # Lissage
+    bpy.ops.object.shade_smooth()
+
+    # --- SÉCURITÉ EXPORT ---
+    obj.select_set(True) # On slectionne le corps
+
+    # Export
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=output_path + "body_v1.glb", 
+            export_format='GLB', 
+            use_selection=True,
+            export_apply=True # On applique les modificateurs (booléens, etc)
+        )
+        print("Corps EVO exporté avec succès !")
+    except Exception as e:
+        print(f"Erreur export : {e}")
+
+# --- TON CHEMIN ---
+path = r"C:\Users\vergn\Documents\Projet-Perso\Ls-Creator\public\models/"
+create_evo_body(path)
