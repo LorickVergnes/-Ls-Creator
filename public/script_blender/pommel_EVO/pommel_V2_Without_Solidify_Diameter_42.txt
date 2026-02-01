@@ -12,7 +12,7 @@ def create_evo_pommel_final(output_path):
     # Paramètres (en mm)
     h_total = 34
     h_base = 3
-    r_max = 38 / 2
+    r_max = 42 / 2
     r_top = 30 / 2
     r_creux = 15.5
     h_gorge = 14 
@@ -58,7 +58,7 @@ def create_evo_pommel_final(output_path):
     bmesh.ops.contextual_create(bm, geom=bottom_verts)
     
     res = bmesh.ops.contextual_create(bm, geom=top_verts)
-
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     top_face = [f for f in res['faces'] if isinstance(f, bmesh.types.BMFace)][0]
     
     top_edges = top_face.edges

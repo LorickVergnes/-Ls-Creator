@@ -1,0 +1,111 @@
+import bpy
+import bmesh
+import math
+
+def create_evo_emitter_v5_final(output_path):
+    # 1. Nettoyage de la scène
+    if bpy.context.object and bpy.context.object.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+    # Paramètres
+    total_height = 46 
+    base_height = 5
+    max_radius = 39 / 2   # 19.5mm
+    hole_radius = 30 / 2  # 15.0mm (Retour au diamètre 30mm)
+    bevel_h = 1.5         # Hauteur de l'arrondi (rapide)
+    bevel_r = 3.0         # Rayon de l'arrondi
+    
+    curve_height = total_height - base_height - bevel_h
+    min_radius = 31 / 2 
+    
+    mesh = bpy.data.meshes.new("EvoEmitter")
+    obj = bpy.data.objects.new("EvoEmitter", mesh)
+    bpy.context.collection.objects.link(obj)
+    bm = bmesh.new()
+    
+    # --- CONSTRUCTION DU PROFIL ---
+    pts = []
+    
+    # A. Base verticale (5mm)
+    pts.append((max_radius, 0, 0))
+    pts.append((max_radius, 0, base_height))
+    
+    # B. Courbe concave (corps)
+    segments = 15
+    for i in range(1, segments + 1):
+        t = i / segments
+        z = base_height + (t * curve_height)
+        r = min_radius + (max_radius - min_radius) * (math.pow(abs(t - 0.5) * 2, 2))
+        pts.append((r, 0, z))
+    
+    # C. L'ARRONDI VIF (Quart de cercle compressé)
+    last_r, _, last_z = pts[-1]
+    round_segments = 10
+    for i in range(1, round_segments + 1):
+        t = i / round_segments
+        angle = t * (math.pi / 2)
+        r = last_r - (bevel_r * (1 - math.cos(angle)))
+        z = last_z + (bevel_h * math.sin(angle))
+        pts.append((r, 0, z))
+
+    # D. PLATEAU PLAT (Jusqu'à 30mm de diamètre)
+    pts.append((hole_radius, 0, total_height))
+
+    # Création de la géométrie
+    verts = [bm.verts.new(p) for p in pts]
+    for i in range(len(verts) - 1):
+        bm.edges.new((verts[i], verts[i+1]))
+        
+    # Révolution (Spin)
+    geom_to_spin = bm.verts[:] + bm.edges[:]
+    bmesh.ops.spin(bm, geom=geom_to_spin, cent=(0, 0, 0), axis=(0, 0, 1), angle=math.radians(360), steps=64)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.001)
+    
+    # Sécurité normales (Recalcul vers l'extérieur)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    
+    bm.to_mesh(mesh)
+    bm.free()
+
+    # --- FINITIONS ---
+    bpy.context.view_layer.objects.active = obj
+    
+    # Épaisseur (Solidify)
+    mod_solid = obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+    mod_solid.thickness = -2.5
+    bpy.ops.object.modifier_apply(modifier="Solidify")
+
+    # Trous de vis de la base
+    for i in range(4):
+        angle = math.radians(i * 90)
+        bpy.ops.mesh.primitive_cylinder_add(radius=1.5, depth=10, location=(math.cos(angle)*max_radius, math.sin(angle)*max_radius, 2.5))
+        hole = bpy.context.object
+        hole.rotation_euler[1] = math.radians(90)
+        hole.rotation_euler[2] = angle
+        
+        mod_bool = obj.modifiers.new(name="Hole", type='BOOLEAN')
+        mod_bool.object = hole
+        mod_bool.operation = 'DIFFERENCE'
+        bpy.ops.object.modifier_apply(modifier="Hole")
+        bpy.data.objects.remove(hole, do_unlink=True)
+
+    bpy.ops.object.shade_smooth()
+    
+    # --- EXPORT FINAL ---
+    obj.select_set(True) 
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=output_path + "emitter_v2.glb", 
+            export_format='GLB', 
+            use_selection=True, 
+            export_apply=True 
+        )
+        print("Émetteur EVO v5 (30mm) exporté !")
+    except Exception as e:
+        print(f"Erreur export : {e}")
+
+# --- TON CHEMIN ---
+path = r"C:\Users\vergn\Documents\Projet-Perso\Ls-Creator\public\models/"
+create_evo_emitter_v5_final(path)

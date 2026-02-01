@@ -1,0 +1,158 @@
+import bpy
+import bmesh
+import math
+
+def create_evo_body_manual_wall(output_path):
+    # ---------------------------------------------------------
+    # 1. NETTOYAGE
+    # ---------------------------------------------------------
+    if bpy.context.object and bpy.context.object.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+    # Paramètres
+    L = 180         
+    R_ext = 42 / 2      # 19mm (Extérieur)
+    R_int = 30 / 2      # 15mm (Intérieur - comme l'émetteur)
+    
+    # Profondeur des creux (inchangée)
+    depth = 2       
+    R_groove = R_ext - depth  # 17mm au fond du creux
+
+    mesh = bpy.data.meshes.new("EvoBody")
+    obj = bpy.data.objects.new("EvoBody", mesh)
+    bpy.context.collection.objects.link(obj)
+    
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    bm = bmesh.new()
+
+    # ---------------------------------------------------------
+    # 2. DESSIN DU MUR COMPLET (Profil fermé)
+    # ---------------------------------------------------------
+    # On dessine le contour exact de la coupe transversale du tube
+    
+    # A. PROFIL EXTÉRIEUR (De haut en bas)
+    z_cursor = 150 
+    
+    # Définition des formes
+    # Creux 3
+    p3 = [(z_cursor-2, R_ext), (z_cursor-4, R_groove), (z_cursor-6, R_ext)] 
+    z_cursor -= 11 
+    # Creux 2
+    p2 = [(z_cursor-2, R_ext), (z_cursor-4, R_groove), (z_cursor-6, R_ext)]
+    z_cursor -= 11
+    # Creux 1
+    p1 = [(z_cursor, R_ext), (z_cursor-5, R_groove), (z_cursor-5, R_ext)]
+    
+    # Liste des points EXTÉRIEURS (Z, Rayon)
+    outer_shape = [
+        (180, R_ext), (150, R_ext),       # Haut lisse
+    ] + p3 + [                            # Creux 3
+        (p3[-1][0], R_ext), (p2[0][0], R_ext) # Espace entre 3 et 2
+    ] + p2 + [                            # Creux 2
+        (p2[-1][0], R_ext), (p1[0][0], R_ext) # Espace entre 2 et 1
+    ] + p1 + [                            # Creux 1
+        (p1[-1][0], R_ext), (35.1, R_ext),    # Espace vers USB
+        (35, R_ext), (35, R_groove), (30, R_groove), (30, R_ext), # Creux USB
+        (0, R_ext)                        # Bas
+    ]
+
+    # B. PROFIL INTÉRIEUR (De bas en haut - Lisse)
+    # C'est ce qui remplace le Solidify : un mur intérieur droit et propre
+    inner_shape = [
+        (0, R_int),      # Bas intérieur
+        (180, R_int)     # Haut intérieur
+    ]
+    
+    # C. FUSION DES DEUX (On ferme la boucle)
+    # On parcourt l'extérieur, puis on connecte à l'intérieur
+    full_profile_points = []
+    
+    # Ajout extérieur (Z, R) -> (X=R, Y=0, Z=Z)
+    for z, r in outer_shape:
+        full_profile_points.append((r, 0, z))
+        
+    # Ajout intérieur (Inverse pour fermer la boucle proprement)
+    for z, r in inner_shape:
+        full_profile_points.append((r, 0, z))
+        
+    # Le dernier point rejoint le premier automatiquement lors de la création de la face
+
+    # Création de la face de profil
+    # Note : On ne crée pas une face mais une boucle d'arêtes pour le Spin
+    verts = [bm.verts.new(p) for p in full_profile_points]
+    
+    # Création des arêtes
+    for i in range(len(verts)):
+        bm.edges.new((verts[i], verts[(i+1) % len(verts)])) # % pour fermer la boucle
+
+    # ---------------------------------------------------------
+    # 3. RÉVOLUTION (SPIN)
+    # ---------------------------------------------------------
+    # Puisque le profil est fermé (un anneau plat), le Spin va créer un tube solide direct.
+    bmesh.ops.spin(
+        bm, 
+        geom=bm.verts[:] + bm.edges[:], 
+        cent=(0,0,0), 
+        axis=(0,0,1), 
+        angle=math.radians(360), 
+        steps=64
+    )
+    
+    # Nettoyage des doublons (Soudure de la couture 360°)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.01)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    
+    bm.to_mesh(mesh)
+    bm.free()
+    
+    # Plus besoin de modifier Solidify ici ! La pièce est déjà épaisse.
+
+    # ---------------------------------------------------------
+    # 4. TROU USB-C
+    # ---------------------------------------------------------
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(R_ext, 0, 32.5))
+    usb_tool = bpy.context.object
+    usb_tool.scale = (15, 9, 3.5)
+    
+    bpy.context.view_layer.objects.active = obj
+    mod_bool = obj.modifiers.new(name="USB_Hole", type='BOOLEAN')
+    mod_bool.object = usb_tool
+    mod_bool.operation = 'DIFFERENCE'
+    bpy.ops.object.modifier_apply(modifier="USB_Hole")
+    bpy.data.objects.remove(usb_tool, do_unlink=True)
+
+    # ---------------------------------------------------------
+    # 5. FINITIONS
+    # ---------------------------------------------------------
+    bpy.ops.object.shade_smooth()
+    
+    # Auto Smooth moderne (Blender 4.1+) ou Edge Split pour la netteté
+    mod_split = obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
+    mod_split.split_angle = math.radians(30)
+    bpy.ops.object.modifier_apply(modifier="EdgeSplit")
+
+    # Affichage Dimensions
+    bpy.context.view_layer.update()
+    dims = obj.dimensions
+    print(f"Dimensions Finales: {dims.x:.2f} x {dims.y:.2f} x {dims.z:.2f}")
+
+    # Export
+    obj.select_set(True)
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=output_path + "body_v2.glb", 
+            export_format='GLB', 
+            use_selection=True,
+            export_apply=True 
+        )
+        print("Export OK - Sans Piques !")
+    except Exception as e:
+        print(f"Erreur export : {e}")
+
+# --- TON CHEMIN ---
+path = r"C:\Users\vergn\Documents\Projet-Perso\Ls-Creator\public\models/"
+create_evo_body_manual_wall(path)

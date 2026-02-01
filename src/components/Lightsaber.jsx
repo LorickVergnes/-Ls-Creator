@@ -77,7 +77,7 @@ export default function Lightsaber({ config }) {
 
       <Part 
         name="Pommel"
-        url="/models/pommel_v1.glb"
+        url="/models/pommel_v2.glb"
         color={colors.pommel || colors.global} 
         position={pommelPos} 
         height={PIECE_HEIGHTS.pommel}
@@ -96,7 +96,7 @@ export default function Lightsaber({ config }) {
 
       <Part 
         name="Body"
-        url="/models/body_v1.glb"
+        url="/models/body_v2.glb"
         color={colors.body || colors.global} 
         position={bodyPos} 
         height={PIECE_HEIGHTS.body}
@@ -114,7 +114,7 @@ export default function Lightsaber({ config }) {
 
       <Part 
         name="Emitter"
-        url="/models/emitter_v1.glb"
+        url="/models/emitter_v2.glb"
         color={colors.emitter || colors.global} 
         position={emitterPos} 
         height={PIECE_HEIGHTS.emitter}
@@ -124,7 +124,7 @@ export default function Lightsaber({ config }) {
 }
 
 // Préchargement avec les noms de fichiers actuels
-useGLTF.preload('/models/pommel_v1.glb');
+useGLTF.preload('/models/pommel_v2.glb');
 useGLTF.preload('/models/ring_v1.glb');
-useGLTF.preload('/models/body_v1.glb');
-useGLTF.preload('/models/emitter_v1.glb');
+useGLTF.preload('/models/body_v2.glb');
+useGLTF.preload('/models/emitter_v2.glb');
